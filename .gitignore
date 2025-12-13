@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Data & Downloads (保留資料夾結構但忽略內容，視你的需求調整)
+downloads/*
+!downloads/.gitkeep
+uploaded_games/*
+!uploaded_games/.gitkeep
+dev_workspace/*
+!dev_workspace/.gitkeep
+
+# OS specific
+.DS_Store
+Thumbs.db
+
+# Virtual Env
+.venv
+env/
+venv/
