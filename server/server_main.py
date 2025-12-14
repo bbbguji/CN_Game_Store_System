@@ -499,6 +499,7 @@ class GameStoreServer:
             game_list = []
             for name, meta in self.games_meta.items():
                 game_list.append({
+                    "id": meta.get("id", 0),
                     "name": name,
                     "version": meta["latest_version"],
                     "min_players": meta.get("min_players", 2),

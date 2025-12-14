@@ -211,6 +211,7 @@ class LobbyClient:
 
         elif msg_type == MSG_ROOM_LIST_RESP:
             self.data_store["room_list"] = data["rooms"]
+            self.last_response = data
             self.response_event.set()
 
         elif msg_type in [MSG_ROOM_CREATE_RESP, MSG_ROOM_JOIN_RESP]:
@@ -803,8 +804,16 @@ class LobbyClient:
         if choice == '1':
             self.reset_req()
             send_packet(self.sock, MSG_GAME_LIST_REQ, {})
-            self.wait_for_response()
+            resp = self.wait_for_response()
+            if resp.get("status") == "error":
+                print(f"[!] Error fetching game list: {resp.get('msg')}")
+                return
             games = self.data_store.get("game_list", [])
+            if not games:
+                print("\n[!] No games found in Store. Please upload a game first.")
+                input("Press Enter to back...")
+                return
+
             print("\nSelect Game:")
             valid_games = {}
             for g in games:
