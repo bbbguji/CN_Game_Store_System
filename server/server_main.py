@@ -1028,8 +1028,7 @@ class GameStoreServer:
 CHAT_PLUGIN_CODE = r"""
 import tkinter as tk
 import threading
-import struct
-import json
+import time
 
 class RoomChat:
     def __init__(self, send_func, username):
@@ -1061,8 +1060,20 @@ class RoomChat:
         btn = tk.Button(frame, text="Send", command=self._send)
         btn.pack(side='right')
         
-        self.root.protocol("WM_DELETE_WINDOW", self._close)
+        self.root.protocol("WM_DELETE_WINDOW", self._close_from_ui)
+        
+        # [Fix] 啟動 Polling 機制，每 200ms 檢查一次是否該關閉
+        # 這樣可以確保 destroy() 是由 UI 執行緒自己呼叫的
+        self.root.after(200, self._check_alive)
         self.root.mainloop()
+
+    def _check_alive(self):
+        # 這是 UI 執行緒自己在跑
+        if not self.running:
+            self._safe_destroy()
+        else:
+            if self.root:
+                self.root.after(200, self._check_alive)
 
     def _send(self, event=None):
         try:
@@ -1075,7 +1086,7 @@ class RoomChat:
     def on_message(self, user, msg):
         if not self.root: return
         try:
-            # 確保在 GUI 執行緒更新文字
+            # 這裡使用 after 是安全的，因為我們只是放入佇列，不涉及銷毀
             self.root.after(0, lambda: self._append_text(user, msg))
         except: pass
 
@@ -1087,19 +1098,21 @@ class RoomChat:
             self.text_area.config(state='disabled')
         except: pass
 
-    def _close(self):
+    def _close_from_ui(self):
+        # 使用者點擊視窗 X 關閉
         self.running = False
-        if self.root:
-            # [Critical Fix] 使用 after 將銷毀動作排程回 GUI 執行緒
-            # 防止從 Main Thread 呼叫 destroy 導致死鎖
-            try: self.root.after(0, self._safe_destroy)
-            except: pass
+        self._safe_destroy()
+
+    def _close(self):
+        # [Fix] 外部 (Client Main Thread) 呼叫關閉
+        # 我們只設定 flag，絕對不要在這裡碰 self.root
+        self.running = False
 
     def _safe_destroy(self):
         try:
             if self.root:
-                self.root.quit()    # 停止 mainloop
-                self.root.destroy() # 銷毀視窗
+                self.root.quit()
+                self.root.destroy()
         except: pass
         self.root = None
 """
