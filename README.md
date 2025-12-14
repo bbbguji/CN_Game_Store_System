@@ -57,6 +57,7 @@ Project_Root/
 ---
 
 ## 執行方式
+
 ### 啟動伺服器
 cd server
 python server_main.py
