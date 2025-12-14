@@ -123,7 +123,7 @@ class GameStoreServer:
                         # 有新連線進來
                         try:
                             conn, addr = s.accept()
-                            conn.setblocking(False)
+                            #conn.setblocking(False)
                             self.inputs.append(conn)
                             self.message_queues[conn] = queue.Queue()
                             print(f"[+] New connection from {addr}")

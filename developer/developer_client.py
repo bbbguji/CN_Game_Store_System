@@ -62,6 +62,31 @@ class DeveloperClient:
             return False
         except: return False
 
+    def _safe_recv(self):
+        """
+        統一接收封包，並攔截強制登出訊息。
+        回傳值: (status_code, data_dict)
+        如果遇到登出或斷線，status_code 會是 None 或 False
+        """
+        try:
+            packet = recv_packet(self.sock)
+            if not packet: return None, None
+            
+            msg_type, data = packet
+            
+            # 攔截強制登出
+            if msg_type == MSG_FORCE_LOGOUT:
+                print(f"\n\n[!] Alert: {data.get('msg', 'Logged out by server')}")
+                print("[*] Returning to Auth Menu...")
+                self.is_logged_in = False
+                self.username = None
+                self.current_user_dir = None
+                return None, None # 中斷後續邏輯
+                
+            return msg_type, data
+        except Exception:
+            return None, None
+
     def start(self):
         if not self.connect():
             print(f"[!] Cannot connect to Server {HOST}:{self.server_port}")
@@ -85,11 +110,12 @@ class DeveloperClient:
             user = input("Username: ")
             pwd = input("Password: ")
             send_packet(self.sock, MSG_LOGIN_REQ, {"username": user, "password": pwd, "role": "developer"})
-            _, resp = recv_packet(self.sock)
-            if resp.get("status") == "ok":
+            msg_type, resp = self._safe_recv()
+            if resp and resp.get("status") == "ok": # 記得檢查 resp 是否存在
                 self.handle_login_success(user)
             else:
-                print(f"[-] Login failed: {resp.get('msg')}")
+                msg = resp.get('msg') if resp else "Connection Error"
+                print(f"[-] Login failed: {msg}")
                 self._wait_input()
         elif choice == '2':
             user = input("New User: ")
@@ -132,12 +158,10 @@ class DeveloperClient:
 
     def fetch_my_games(self):
         send_packet(self.sock, MSG_DEV_MY_GAMES_REQ, {})
-        response_tuple = recv_packet(self.sock)
-        if not response_tuple or response_tuple[1] is None:
-            print("[!] Warning: Could not fetch game list (Connection unstable).")
+        msg_type, resp = self._safe_recv()
+        # 檢查是否接收失敗或被登出 (resp 為 None)
+        if not resp: 
             return []
-            
-        _, resp = response_tuple
         return resp.get("games", [])
 
     def generate_template(self):
@@ -344,12 +368,11 @@ class DeveloperClient:
                 send_packet(self.sock, MSG_GAME_UPLOAD_END, {})
                 
                 # 安全接收回應，防止 NoneType 崩潰=
-                response_tuple = recv_packet(self.sock)
-                if response_tuple and response_tuple[1]:
-                    res = response_tuple[1]
+                msg_type, res = self._safe_recv()
+                if res:
                     print(f"[+] Result: {res.get('status')} - {res.get('msg', '')}")
                 else:
-                    print("[-] Error: No response from server (Server might have disconnected or crashed).")
+                    print("[-] Upload finished but connection lost (or logged out).")
             else:
                 msg = init_resp.get('msg') if init_resp else "No response"
                 print(f"[-] Server rejected upload: {msg}")
