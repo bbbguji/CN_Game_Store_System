@@ -53,3 +53,17 @@ Project_Root/
 │   ├── downloads/          # [安裝區] 玩家下載的遊戲存放處
 │   └── plugins/            # [擴充區] 已安裝的 Python 插件 (如聊天室)
 └── README.md
+
+---
+## 執行方式
+### 啟動伺服器
+cd server
+python server_main.py
+
+### 開發者端
+cd developer
+python developer_client.py
+
+### 玩家端
+cd player
+python lobby_client.py
