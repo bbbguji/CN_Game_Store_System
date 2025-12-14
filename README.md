@@ -58,14 +58,14 @@ Project_Root/
 
 ## 執行方式
 
-### 啟動伺服器
+啟動伺服器
 cd server
 python server_main.py
 
-### 開發者端
+開發者端
 cd developer
 python developer_client.py
 
-### 玩家端
+玩家端
 cd player
 python lobby_client.py
