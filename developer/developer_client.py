@@ -132,7 +132,12 @@ class DeveloperClient:
 
     def fetch_my_games(self):
         send_packet(self.sock, MSG_DEV_MY_GAMES_REQ, {})
-        _, resp = recv_packet(self.sock)
+        response_tuple = recv_packet(self.sock)
+        if not response_tuple or response_tuple[1] is None:
+            print("[!] Warning: Could not fetch game list (Connection unstable).")
+            return []
+            
+        _, resp = response_tuple
         return resp.get("games", [])
 
     def generate_template(self):
@@ -333,6 +338,7 @@ class DeveloperClient:
                         c = f.read(4096)
                         if not c: break
                         send_packet(self.sock, MSG_GAME_UPLOAD_DATA, c)
+                        time.sleep(0.005)
                 
                 # 4. 發送結束訊號
                 send_packet(self.sock, MSG_GAME_UPLOAD_END, {})
