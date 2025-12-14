@@ -231,6 +231,7 @@ class LobbyClient:
 
         elif msg_type == MSG_GAME_LIST_RESP:
             self.data_store["game_list"] = data["games"]
+            self.last_response = data
             self.response_event.set()
 
         elif msg_type == MSG_GAME_DOWNLOAD_INIT:

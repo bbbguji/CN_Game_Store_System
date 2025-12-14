@@ -494,10 +494,21 @@ class GameStoreServer:
         del self.upload_states[sock]
 
     def handle_game_list(self, sock, data):
-        games_list = []
-        for g_name, g_info in self.games_meta.items():
-            games_list.append({"name": g_name, "version": g_info["latest_version"], "id": g_info["id"]})
-        self.send_to(sock, MSG_GAME_LIST_RESP, {"games": games_list})
+        print("[Debug] Received game list request from", sock)
+        try:
+            game_list = []
+            for name, meta in self.games_meta.items():
+                game_list.append({
+                    "name": name,
+                    "version": meta["latest_version"],
+                    "min_players": meta.get("min_players", 2),
+                    "max_players": meta.get("max_players", 2),
+                    "owner": meta.get("owner", "Unknown")
+                })
+            self.send_to(sock, MSG_GAME_LIST_RESP, {"status": "ok", "games": game_list})
+        except Exception as e:
+            print("[!] handle_game_list error:", e)
+            self.send_to(sock, MSG_GAME_LIST_RESP, {"status": "error", "msg": str(e)})
 
     def handle_game_download(self, sock, data):
         game_name = data.get("game_name")
