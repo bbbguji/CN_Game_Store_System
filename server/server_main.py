@@ -112,13 +112,15 @@ class GameStoreServer:
                 try: self.server_socket.close()
                 except: pass
         
-        # Main Select Loop
+        # Main Select Loop(還有socket在監聽就繼續)
         while self.inputs:
             try:
                 readable, writable, exceptional = select.select(self.inputs, self.outputs, self.inputs, 0.1)
                 
+                # 傳入資料的socket處理
                 for s in readable:
                     if s is self.server_socket:
+                        # 有新連線進來
                         try:
                             conn, addr = s.accept()
                             conn.setblocking(False)
@@ -127,6 +129,7 @@ class GameStoreServer:
                             print(f"[+] New connection from {addr}")
                         except Exception as e:
                             print(f"[!] Accept failed: {e}")
+                    # client socket 有資料可讀取
                     else:
                         try:
                             msg_type, payload = recv_packet(s)
@@ -138,8 +141,10 @@ class GameStoreServer:
                             print(f"[!] Error processing packet: {e}")
                             self.handle_disconnect(s)
 
+                # 寫入資料的socket處理
                 for s in writable:
                     try:
+                        # 此client有資料要發送
                         if s in self.message_queues and not self.message_queues[s].empty():
                             try:
                                 msg_type, payload = self.message_queues[s].get_nowait()
@@ -151,6 +156,7 @@ class GameStoreServer:
                         print(f"[!] Write failed for {s.fileno()}: {e}")
                         self.handle_disconnect(s)
                 
+                # 處理異常socket
                 for s in exceptional:
                     self.handle_disconnect(s)
 
@@ -214,7 +220,7 @@ class GameStoreServer:
     def handle_login(self, sock, data):
         username = data.get("username")
         pwd = data.get("password")
-        role = data.get("role", "player") # 預設為 player，避免舊客戶端錯誤
+        role = data.get("role", "player") # 預設為 player
 
         if role not in ["player", "developer"]:
             self.send_to(sock, MSG_LOGIN_RESP, {"status": "error", "msg": "Invalid role"})
@@ -231,11 +237,8 @@ class GameStoreServer:
                 old_sock = self.active_sessions[key]
                 if old_sock != sock:
                     print(f"[*] Detect duplicate login for {role} {username}, kicking old session...")
-                    # 發送通知給舊連線
-                    # 注意：這裡不呼叫 handle_disconnect，避免訊息被清掉
-                    # 舊 Client 收到這個封包後會自己斷線
-                    self.send_to(old_sock, MSG_FORCE_LOGOUT, {"msg": "Logged in from another location"})
-                    
+                    # 發送通知給舊連線，舊Client收到這個封包後會自己斷線
+                    self.send_to(old_sock, MSG_FORCE_LOGOUT, {"msg": "Logged in from another location"})   
                     # 從 socket_map 移除舊的關聯 (但暫時保留 socket 連線讓訊息傳送)
                     # 這樣下次 handle_disconnect 觸發時才不會誤刪新 session
                     if old_sock in self.socket_map:
@@ -805,6 +808,7 @@ class GameStoreServer:
         room_id = result["room_id"]
         game_id = result["game_id"]
         
+        # 記錄正在執行的遊戲process
         self.running_games[room_id] = result["proc"]
         
         # 1. 找出遊戲名稱並更新 played_by 紀錄

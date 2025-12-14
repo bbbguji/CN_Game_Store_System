@@ -177,7 +177,7 @@ class LobbyClient:
             sys.stdout.flush()
             return
         
-        # [優先處理] 準備檢查請求 -> 自動檢查並回覆 Server
+        # 準備檢查請求 -> 自動檢查並回覆 Server
         if msg_type == MSG_READY_CHECK_REQ:
             self._handle_ready_check(data)
             return
@@ -190,7 +190,7 @@ class LobbyClient:
         
         # In-Game Suppression
         if self.state == STATE_PLAYING:
-            # 這裡只做資料更新，不 print
+            # 這裡只做資料更新，不印出任何 UI 訊息，避免干擾遊戲
             if msg_type == MSG_ROOM_LIST_RESP:
                 self.data_store["room_list"] = data["rooms"]
             elif msg_type == MSG_ROOM_STATUS_UPDATE:
@@ -316,14 +316,18 @@ class LobbyClient:
             return None
 
     def _handle_ready_check(self, data):
-        game_name = data["game_name"]; req_ver = data["version"]
+        game_name = data["game_name"]
+        req_ver = data["version"]
         local_ver = self._get_local_version(game_name)
         status, msg = "ok", "Ready"
         if not local_ver: status, msg = "error", "Not installed"
         elif local_ver != req_ver: status, msg = "error", f"Ver mismatch ({local_ver})"
         if status != "ok":
-            self.clear_line(); print(f"\n[!] Ready Check Failed: {msg}. Go to Store.")
-            self.print_current_room(); sys.stdout.write("> "); sys.stdout.flush()
+            self.clear_line()
+            print(f"\n[!] Ready Check Failed: {msg}. Go to Store.")
+            self.print_current_room()
+            sys.stdout.write("> ")
+            sys.stdout.flush()
         send_packet(self.sock, MSG_READY_CHECK_RESP, {"status": status, "msg": msg})
 
     def launch_game_client(self, data):
@@ -389,9 +393,25 @@ class LobbyClient:
             kwargs = {}
             if sys.platform == "win32":
                 kwargs['creationflags'] = subprocess.CREATE_NEW_CONSOLE
-            
-            # 啟動遊戲 (在新視窗中)
-            subprocess.Popen(final_cmd, cwd=game_dir, **kwargs).wait()
+                # 啟動遊戲 (在新視窗中)
+                subprocess.Popen(final_cmd, cwd=game_dir, **kwargs).wait()
+            elif sys.platform == "darwin": # macOS 專用處理
+                # 將指令串接成字串，並用 AppleScript 呼叫 Terminal 執行
+                # 注意：這裡處理引數轉義比較麻煩，這是簡易版解法
+                
+                # 將 python 執行檔與參數合併
+                cmd_str = " ".join(final_cmd)
+                
+                # 使用 os.system 呼叫 macOS 的 Terminal App 執行該指令
+                # 這樣會彈出一個新的白色終端機視窗
+                osascript_cmd = f"""osascript -e 'tell application "Terminal" to do script "cd {game_dir} && {cmd_str}; exit"'"""
+                os.system(osascript_cmd)
+                
+                # 注意：這種方式主程式無法輕易使用 .wait() 等待子視窗結束
+                # 這是跨平台最頭痛的地方，通常建議 Mac 使用者直接玩 GUI 版遊戲體驗較好
+                
+            else: # Linux / 其他
+                subprocess.Popen(final_cmd, cwd=game_dir).wait()
             
             print("\n[*] Game Session finished.")
             # 遊戲結束後，將狀態切回房間，並重繪介面
@@ -505,7 +525,7 @@ class LobbyClient:
             user = input("Username: ")
             pwd = input("Password: ")
             self.reset_req()
-            if send_packet(self.sock, MSG_LOGIN_REQ, {"username": user, "password": pwd}):
+            if send_packet(self.sock, MSG_LOGIN_REQ, {"username": user, "password": pwd, "role": "player"}):
                 resp = self.wait_for_response()
                 if resp.get("status") == "ok":
                     self.username = user
@@ -516,7 +536,7 @@ class LobbyClient:
             user = input("New User: ")
             pwd = input("New Pass: ")
             self.reset_req()
-            if send_packet(self.sock, MSG_REGISTER_REQ, {"username": user, "password": pwd}):
+            if send_packet(self.sock, MSG_REGISTER_REQ, {"username": user, "password": pwd, "role": "player"}):
                 resp = self.wait_for_response()
                 print(f"[*] {resp.get('msg')}")
         elif choice == '3':
@@ -565,7 +585,7 @@ class LobbyClient:
             print(f"\n{'No.':<4} {'Name':<15} {'Latest':<8} {'Status'}")
             print("-" * 45)
             for idx, g in enumerate(games):
-                # [UX Fix] 判斷狀態
+                # 判斷狀態
                 local_ver = self._get_local_version(g['name'])
                 server_ver = g['version']
                 
@@ -767,11 +787,11 @@ class LobbyClient:
         if not rooms:
             print("(No rooms currently open)")
         else:
-            # [UX Fix] 增加 Game Name 欄位，排版優化
+            # 增加 Game Name 欄位，排版優化
             print(f"{'ID':<4} {'Room Name':<15} {'Game':<12} {'Players':<8} {'Status'}")
             print("-" * 55)
             for r in rooms:
-                # 兼容舊 Server (若沒傳 game_name 則顯示 Unknown)
+                # 若沒傳 game_name 則顯示 Unknown
                 gname = r.get('game_name', 'Unknown')
                 print(f"{r['id']:<4} {r['name']:<15} {gname:<12} {r['players']:<8} {r['status']}")
             print("-" * 55)
@@ -788,7 +808,7 @@ class LobbyClient:
             valid_games = {}
             for g in games:
                 lv = self._get_local_version(g['name'])
-                st = "[OK]" if lv == g['version'] else "[Need DL]"
+                st = "[have downloaded]" if lv == g['version'] else "[Need download]"
                 print(f"ID: {g['id']} | {g['name']} {st}")
                 valid_games[g['id']] = g
             gid = input("Game ID: ")
@@ -827,7 +847,7 @@ class LobbyClient:
         is_host = (room["host"] == self.username)
         print("\n[Commands] 1. Leave " + ("2. Start Game" if is_host else ""))
         
-        # 這裡如果不處裡，遊戲啟動時輸入的 '1' 會被這裡吃到
+        # 這裡如果不處理，遊戲啟動時輸入的 '1' 會被這裡吃到
         choice = input("> ")
         
         if choice == '1':
