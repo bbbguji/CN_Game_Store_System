@@ -70,7 +70,9 @@ class DeveloperClient:
         """
         try:
             packet = recv_packet(self.sock)
-            if not packet: return None, None
+            if not packet:
+                self._handle_disconnect()
+                return None, None
             
             msg_type, data = packet
             
@@ -78,14 +80,21 @@ class DeveloperClient:
             if msg_type == MSG_FORCE_LOGOUT:
                 print(f"\n\n[!] Alert: {data.get('msg', 'Logged out by server')}")
                 print("[*] Returning to Auth Menu...")
-                self.is_logged_in = False
-                self.username = None
-                self.current_user_dir = None
+                self._handle_disconnect()
                 return None, None # 中斷後續邏輯
                 
             return msg_type, data
         except Exception:
             return None, None
+
+    def _handle_disconnect(self):
+        self.is_logged_in = False
+        self.username = None
+        self.current_user_dir = None
+        if self.sock:
+            try: self.sock.close()
+            except: pass
+        self.sock = None
 
     def start(self):
         if not self.connect():
@@ -101,6 +110,12 @@ class DeveloperClient:
 
     def auth_menu(self):
         self._print_header("Developer Authentication")
+        if self.sock is None:
+            print("[*] Connection lost. Reconnecting...")
+            if not self.connect():
+                print("[!] Reconnection failed. Retrying in 3s...")
+                time.sleep(3)
+                return # 回到 start loop 重新嘗試
         print("1. Login")
         print("2. Register")
         print("3. Exit")
@@ -121,8 +136,11 @@ class DeveloperClient:
             user = input("New User: ")
             pwd = input("New Pass: ")
             send_packet(self.sock, MSG_REGISTER_REQ, {"username": user, "password": pwd, "role": "developer"})
-            _, resp = recv_packet(self.sock)
-            print(f"[*] {resp.get('msg')}")
+            msg_type, resp = self._safe_recv()
+            if resp:
+                print(f"[*] {resp.get('msg')}")
+            else:
+                print("[-] Connection Error during registration.")
             self._wait_input()
         elif choice == '3':
             self.running = False
@@ -153,8 +171,9 @@ class DeveloperClient:
         elif choice == '4': self.remove_process()
         elif choice == '5': self.view_reviews_process()
         elif choice == '6':
-            self.is_logged_in = False
-            self.username = None
+            print("[*] Logging out...")
+            # 主動登出只需切斷本地狀態，Server 會處理斷線
+            self._handle_disconnect()
 
     def fetch_my_games(self):
         send_packet(self.sock, MSG_DEV_MY_GAMES_REQ, {})
@@ -312,8 +331,11 @@ class DeveloperClient:
             
             if input(f"Confirm REMOVE '{name}'? (y/n) ").lower() == 'y':
                 send_packet(self.sock, MSG_GAME_REMOVE_REQ, {"name": name})
-                _, resp = recv_packet(self.sock)
-                print(f"Result: {resp.get('msg')}")
+                msg_type, resp = self._safe_recv()
+                if resp:
+                    print(f"Result: {resp.get('msg')}")
+                else:
+                    print("[-] Connection Error.")
         except: pass
         self._wait_input()
 
@@ -328,14 +350,17 @@ class DeveloperClient:
             name = my_games[sel]['name']
             
             send_packet(self.sock, MSG_GAME_DETAIL_REQ, {"game_name": name})
-            _, resp = recv_packet(self.sock)
+            msg_type, resp = self._safe_recv()
             
-            print(f"\n=== Reviews for {name} ===")
-            print(f"Avg Score: {resp.get('avg_score', 0)}")
-            reviews = resp.get('reviews', [])
-            if not reviews: print("No reviews.")
-            for r in reviews:
-                print(f"- {r['user']}: {r['comment']} ({r['score']}/5)")
+            if resp:
+                print(f"\n=== Reviews for {name} ===")
+                print(f"Avg Score: {resp.get('avg_score', 0)}")
+                reviews = resp.get('reviews', [])
+                if not reviews: print("No reviews.")
+                for r in reviews:
+                    print(f"- {r['user']}: {r['comment']} ({r['score']}/5)")
+            else:
+                print("[-] Connection Error.")
         except: pass
         self._wait_input()
 
@@ -352,11 +377,10 @@ class DeveloperClient:
                 "min_players": m.get("min_players", 2),
                 "max_players": m.get("max_players", 4)
             })
-            init_resp = recv_packet(self.sock)[1]
+            msg_type, init_resp = self._safe_recv()
             if init_resp and init_resp.get("status") == "ready":
                 print("[*] Uploading data...")
                 
-                # 3. 傳送檔案資料
                 with open(zip_base+".zip", 'rb') as f:
                     while True:
                         c = f.read(4096)
@@ -364,18 +388,23 @@ class DeveloperClient:
                         send_packet(self.sock, MSG_GAME_UPLOAD_DATA, c)
                         time.sleep(0.005)
                 
-                # 4. 發送結束訊號
                 send_packet(self.sock, MSG_GAME_UPLOAD_END, {})
                 
-                # 安全接收回應，防止 NoneType 崩潰=
+                # [Fix] 再次使用 _safe_recv 接收結果
                 msg_type, res = self._safe_recv()
                 if res:
                     print(f"[+] Result: {res.get('status')} - {res.get('msg', '')}")
                 else:
                     print("[-] Upload finished but connection lost (or logged out).")
             else:
-                msg = init_resp.get('msg') if init_resp else "No response"
-                print(f"[-] Server rejected upload: {msg}")
+                # 若 init_resp 為 None，代表連線錯誤
+                if init_resp is None:
+                     print("[-] Connection Error: No response from server.")
+                else:
+                     msg = init_resp.get('msg', 'Unknown Error')
+                     print(f"[-] Server rejected upload: {msg}")
+        except Exception as e:
+            print(f"[!] Upload Exception: {e}")
         finally:
             if os.path.exists(zip_base+".zip"): os.remove(zip_base+".zip")
 
