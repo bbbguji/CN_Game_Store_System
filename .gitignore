@@ -3,6 +3,10 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# Player plugins (保留資料夾結構但忽略內容)
+player/plugins/*
+!player/plugins/.gitkeep
+
 # Data & Downloads (保留資料夾結構但忽略內容，視你的需求調整)
 downloads/*
 !downloads/.gitkeep
